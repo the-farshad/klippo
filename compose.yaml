@@ -1,0 +1,31 @@
+# vLLM server for klippo.py (needs a GPU with compute capability 7.0+).
+# Start: podman-compose up -d   Logs: podman logs -f klippo-vllm
+services:
+  vllm:
+    image: docker.io/vllm/vllm-openai:latest
+    container_name: klippo-vllm
+    restart: unless-stopped
+    devices:
+      # One GPU via NVIDIA CDI; change the number to use another GPU.
+      - nvidia.com/gpu=0
+    # vLLM uses /dev/shm for its API-server <-> engine IPC; podman-compose
+    # ignores `ipc: host`, so size it explicitly (default 64 MB is too small).
+    shm_size: 8gb
+    ports:
+      - "127.0.0.1:8000:8000"  # localhost only
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface:z
+    environment:
+      # Use the weights already in ~/.cache/huggingface; remove this line to download on first start.
+      - HF_HUB_OFFLINE=1
+    command:
+      # Qwen3.8-27B with 4-bit weights (W4A16, Red Hat / LLM Compressor):
+      # ~18 GiB, so it fits one 24 GB GPU (the FP8 version needs two).
+      - RedHatAI/Qwen3.8-27B-INT4
+      - --served-model-name=klippo
+      - --max-model-len=8192
+      # Single user; the hybrid (Mamba) layers need one state block per sequence,
+      # and only ~4 GB is left for KV cache/state after the weights on one GPU.
+      - --max-num-seqs=4
+      - --gpu-memory-utilization=0.92
+      - --language-model-only
